@@ -33,7 +33,6 @@ class AutoEncoder(nn.Module):
         encoder_input_sizes = [input_channels] + encoder_channel_out_sizes[:-1]
         modules = []
         for in_size, out_size in zip(encoder_input_sizes, encoder_channel_out_sizes):
-            print(in_size, out_size)
             modules.append(self._get_cnn_module(in_size, out_size))
 
         encoder_linear = nn.Linear(self.linear_layer_size, 256)
@@ -49,7 +48,7 @@ class AutoEncoder(nn.Module):
             input_channels
         ]
 
-        output_padding = [(1, 0), 0, 0, 0]
+        output_padding = [(1, 0), 0, 0, 1]
         for in_size, out_size, padding in zip(
             self.encoder_channel_out_sizes[::-1], output_channel_sizes, output_padding
         ):
