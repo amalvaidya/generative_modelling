@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+from math import floor
 
 # inspired by
 # https://github.com/AntixK/PyTorch-VAE/blob/master/models/beta_vae.py
@@ -8,11 +9,13 @@ import torch
 class AutoEncoder(nn.Module):
     def __init__(
         self,
+        latent_dim,
         input_channels=3,
-        encoder_channel_out_sizes=[16, 32, 64, 128],
+        encoder_channel_out_sizes=[16, 32, 64, 128, 256],
         input_image_h_w=(218, 178),
     ):
         super(AutoEncoder, self).__init__()
+        self.latent_dim = latent_dim
         self.encoder_channel_out_sizes = encoder_channel_out_sizes
         self.encoder_out_channels = encoder_channel_out_sizes[-1]
         # Need Define a linear layer
@@ -35,12 +38,12 @@ class AutoEncoder(nn.Module):
         for in_size, out_size in zip(encoder_input_sizes, encoder_channel_out_sizes):
             modules.append(self._get_cnn_module(in_size, out_size))
 
-        encoder_linear = nn.Linear(self.linear_layer_size, 256)
+        encoder_linear = nn.Linear(self.linear_layer_size, self.latent_dim)
 
-        self.encoder = nn.Sequential(*modules, nn.Flatten(), encoder_linear)
+        self.encoder = nn.Sequential(*modules, nn.Flatten(), encoder_linear,) # nn.BatchNorm1d(1))
 
     def _init_decoder(self, input_channels):
-        self.decoder_linear = nn.Linear(256, self.linear_layer_size)
+        self.decoder_linear = nn.Linear(self.latent_dim, self.linear_layer_size)
 
         modules = []
 
@@ -48,7 +51,8 @@ class AutoEncoder(nn.Module):
             input_channels
         ]
 
-        output_padding = [(1, 0), 0, 0, 1]
+        #output_padding = [(1, 0), 0, 0, 1]
+        output_padding = [(1, 1), (1, 0), 0, 0, 1]
         for in_size, out_size, padding in zip(
             self.encoder_channel_out_sizes[::-1], output_channel_sizes, output_padding
         ):
@@ -86,8 +90,6 @@ class AutoEncoder(nn.Module):
         """
         Calculated the height and width of conv2D output given input params
         """
-
-        from math import floor
 
         if type(kernel_size) is not tuple:
             kernel_size = (kernel_size, kernel_size)
