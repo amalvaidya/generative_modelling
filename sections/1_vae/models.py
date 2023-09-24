@@ -39,12 +39,11 @@ class AutoEncoder(nn.Module):
         for in_size, out_size in zip(encoder_input_sizes, encoder_channel_out_sizes):
             modules.append(self._get_cnn_module(in_size, out_size))
 
-        encoder_linear = nn.Linear(self.linear_layer_size, self.latent_dim)
+        self.encoder_linear_mean = nn.Linear(self.linear_layer_size, self.latent_dim)
 
         self.encoder = nn.Sequential(
             *modules,
             nn.Flatten(),
-            encoder_linear,
         )  # nn.BatchNorm1d(1))
 
     def _init_decoder(self, input_channels):
@@ -67,13 +66,11 @@ class AutoEncoder(nn.Module):
 
         self.decoder = nn.Sequential(*modules)
 
-        pass
-
     def encode(self, input: torch.Tensor):
         """Helper function making it easier to encode
         images
         """
-        return self.encoder(input)
+        return self.encoder_linear_mean(self.encoder(input))
 
     def decode(self, input: torch.Tensor):
         input = self.decoder_linear(input)
@@ -93,7 +90,7 @@ class AutoEncoder(nn.Module):
     @staticmethod
     def conv_output_shape(h_w, kernel_size=3, stride=2, pad=1, dilation=1):
         """
-        Calculated the height and width of conv2D output given input params
+        Calculate the height and width of conv2D output given input params
         """
 
         if type(kernel_size) is not tuple:
@@ -141,3 +138,66 @@ class AutoEncoder(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(),
         )
+
+
+class VAE(AutoEncoder):
+    """construct a VAE by using the basic same skeleton
+    as the AutoEncoder, but by adding and overwriting a few things
+    """
+
+    def __init__(
+        self,
+        latent_dim,
+        input_channels=3,
+        encoder_channel_out_sizes=[16, 32, 64, 128, 256],
+        input_image_h_w=(218, 178),
+    ):
+        super().__init__(
+            latent_dim,
+            input_channels,
+            encoder_channel_out_sizes,
+            input_image_h_w,
+        )
+        # Add another linear layer for the log variance
+        self.encoder_linear_logvar = nn.Linear(self.linear_layer_size, self.latent_dim)
+
+    @staticmethod
+    def reparameterise(mu, logvar):
+        """Implement the reparameterisation trick"""
+        # scale the log variance to std
+        std = torch.exp(0.5 * logvar)
+        # sample from a standard noem
+        normal_noise = torch.randn_like(std)
+        return mu + (std * normal_noise)
+
+    def encode(self, input: torch.Tensor):
+        """Helper function making it easier to encode
+        images
+        """
+        x = self.encoder(input)
+        mu = self.encoder_linear_mean(x)
+        logvar = self.encoder_linear_logvar(x)
+        return self.reparameterise(mu, logvar), mu, logvar
+
+    def forward(self, input):
+        encoded, mu, logvar = self.encode(input)
+        return self.decode(encoded), mu, logvar
+
+    def loss_function(self, input, target, mu, logvar):
+        # summed over each element in the latent space
+        # the mean is taken over training examples
+        kld_loss = torch.mean(
+            -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=1), dim=0
+        )
+        kld_loss = kld_loss * 1e-5
+
+        reconstruction_loss = nn.functional.mse_loss(input, target)
+
+        return (
+            reconstruction_loss + kld_loss,
+            reconstruction_loss.detach(),
+            kld_loss.detach(),
+        )
+
+
+# https://arxiv.org/pdf/1606.02228.pdf
